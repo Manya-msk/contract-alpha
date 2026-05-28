@@ -22,14 +22,16 @@ type Score = {
   contract_growth: number;
   hiring_growth: number;
   award_size: number;
+  sentiment_score: number;
   total_awards: number;
   trigger_award: string;
+  thesis: string;
   evidence: {
     title: string;
     url: string;
     snippet: string;
     source: string;
-  };
+  }[];
 };
 
 type BacktestPoint = {
@@ -83,12 +85,32 @@ function asNumber(value: unknown, fallback = 0) {
 }
 
 export default function Home() {
-  const [cutoffDate, setCutoffDate] = useState("2024-01-01");
+  const [cutoffDate, setCutoffDate] = useState("2023-01-01");
   const [horizonMonths, setHorizonMonths] = useState(12);
   const [data, setData] = useState<SignalResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [revealed, setRevealed] = useState(false);
+
+  const loadingMessages = [
+    "Fetching contract awards...",
+    "Scoring companies...",
+    "Generating sentiment signals...",
+    "Building investment theses...",
+    "Running backtest...",
+  ];
+  const [loadingMsg, setLoadingMsg] = useState(loadingMessages[0]);
+
+  useEffect(() => {
+    if (!loading) return;
+    let i = 0;
+    const interval = setInterval(() => {
+      i = (i + 1) % loadingMessages.length;
+      setLoadingMsg(loadingMessages[i]);
+    }, 2000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
 
   const runAnalysis = async () => {
     setLoading(true);
@@ -103,6 +125,7 @@ export default function Home() {
         body: JSON.stringify({
           cutoff_date: cutoffDate,
           horizon_months: horizonMonths,
+          use_live_contracts: true,
         }),
       });
       if (!response.ok) {
@@ -172,6 +195,9 @@ export default function Home() {
               {loading ? "Discovering..." : "Run"}
             </button>
           </div>
+          {loading ? (
+            <p className="mt-2 text-xs italic text-ink/50">{loadingMsg}</p>
+          ) : null}
         </header>
 
         {error ? (
@@ -208,7 +234,7 @@ export default function Home() {
               <span className="text-ink/70">Score {"<"} 0.2 - weak or declining contract activity</span>
             </div>
             <div className="overflow-x-auto rounded border border-ink/10">
-              <table className="w-full min-w-[1100px] border-collapse text-left text-sm">
+              <table className="w-full min-w-[1400px] border-collapse text-left text-sm">
                 <thead className="bg-ink text-white">
                   <tr>
                     <th className="px-3 py-2">Ticker</th>
@@ -218,11 +244,24 @@ export default function Home() {
                     <th className="px-3 py-2">Contracts</th>
                     <th className="px-3 py-2">Hiring</th>
                     <th className="px-3 py-2">Awards</th>
+                    <th className="px-3 py-2">Sentiment</th>
                     <th className="px-3 py-2">Trigger award</th>
+                    <th className="px-3 py-2">Thesis</th>
                     <th className="px-3 py-2">Evidence</th>
                   </tr>
                 </thead>
                 <tbody>
+                  {loading && scores.length === 0
+                    ? Array.from({ length: 5 }).map((_, i) => (
+                        <tr key={i} className="border-t border-ink/10 bg-white animate-pulse">
+                          {Array.from({ length: 11 }).map((_, j) => (
+                            <td key={j} className="px-3 py-4">
+                              <div className="h-3 rounded bg-ink/10" />
+                            </td>
+                          ))}
+                        </tr>
+                      ))
+                    : null}
                   {scores.map((row) => (
                     <tr key={row.ticker} className="border-t border-ink/10 bg-white">
                       <td className="px-3 py-3 font-semibold">{row.ticker}</td>
@@ -244,16 +283,58 @@ export default function Home() {
                       <td className="px-3 py-3">{percent.format(asNumber(row.contract_growth))}</td>
                       <td className="px-3 py-3">{percent.format(asNumber(row.hiring_growth))}</td>
                       <td className="px-3 py-3">{currency.format(asNumber(row.total_awards))}</td>
+                      <td className="px-3 py-3">
+                        <span
+                          className={`rounded px-2 py-1 text-xs font-semibold ${
+                            asNumber(row.sentiment_score) > 0.2
+                              ? "bg-signal/15 text-signal"
+                              : asNumber(row.sentiment_score) < -0.2
+                                ? "bg-danger/15 text-danger"
+                                : "bg-ink/10 text-ink/60"
+                          }`}
+                        >
+                          {asNumber(row.sentiment_score).toFixed(2)}
+                        </span>
+                      </td>
                       <td className="max-w-72 px-3 py-3 text-xs text-ink/75">{row.trigger_award}</td>
+                      <td className="max-w-xs px-3 py-3 text-xs text-ink/60">
+                        {(() => {
+                          const thesisLines = (row.thesis || "")
+                            .split("\n")
+                            .map((l) => l.trim())
+                            .filter((l) => l.startsWith("-"))
+                            .map((l) => l.replace(/^-\s*/, ""))
+                            .slice(0, 3);
+                          return thesisLines.length > 0 ? (
+                            <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+                              {thesisLines.map((line, i) => (
+                                <li key={i} style={{ display: "flex", gap: "6px", fontSize: "11px", marginBottom: "4px", lineHeight: "1.4", color: "inherit" }}>
+                                  <span style={{ color: "#1f8a70", flexShrink: 0 }}>•</span>
+                                  <span>{line}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <span style={{ fontSize: "11px", fontStyle: "italic" }}>
+                              {row.thesis || "Generating..."}
+                            </span>
+                          );
+                        })()}
+                      </td>
                       <td className="max-w-72 px-3 py-3 text-xs">
-                        {row.evidence?.url ? (
-                          <a className="font-semibold text-signal underline" href={row.evidence.url} rel="noreferrer" target="_blank">
-                            {row.evidence.title}
-                          </a>
-                        ) : (
-                          <span className="font-semibold text-ink/75">{row.evidence?.title ?? "Evidence unavailable"}</span>
-                        )}
-                        <div className="mt-1 text-ink/55">{row.evidence?.snippet}</div>
+                        {(row.evidence ?? []).map((ev, i) => (
+                          <div key={i}>
+                            {i > 0 && <div className="my-2 border-t border-ink/10" />}
+                            {ev.url ? (
+                              <a className="font-semibold text-signal underline" href={ev.url} rel="noreferrer" target="_blank">
+                                {ev.title}
+                              </a>
+                            ) : (
+                              <span className="font-semibold text-ink/75">{ev.title ?? "Evidence unavailable"}</span>
+                            )}
+                            {ev.snippet ? <div className="mt-1 text-ink/55">{ev.snippet}</div> : null}
+                          </div>
+                        ))}
                       </td>
                     </tr>
                   ))}
@@ -325,7 +406,7 @@ export default function Home() {
             </p>
             <div className="h-[380px] min-h-[350px]">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={revealed ? data?.backtest.series ?? [] : []}>
+                <AreaChart data={revealed ? (data?.backtest.series ?? []).filter(p => p.portfolio > 0 && p.spy > 0 && p.portfolio < 10000 && p.spy < 10000) : []}>
                   <CartesianGrid stroke="#d8d7ce" strokeDasharray="3 3" />
                   <XAxis dataKey="date" minTickGap={24} />
                   <YAxis domain={["dataMin - 5", "dataMax + 5"]} />

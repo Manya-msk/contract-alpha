@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sqlite3 /Users/mahaperiva/Downloads/WebDataUnlockedHackathon/contract-alpha/backend/contract_alpha.db \"SELECT query, response_json FROM serp_cache WHERE query LIKE ''sentiment:%'' LIMIT 5;\")",
+      "Bash(source .venv/bin/activate)",
+      "Bash(python seed.py)",
+      "Bash(python -c \":*)",
+      "Bash(python3 -m json.tool)",
+      "Bash(python3 -c \" import json,sys data = json.load\\(sys.stdin\\) print\\(''Selected tickers:'', data.get\\(''selected_tickers''\\)\\) print\\(''Discovery source:'', data[''discovery''][''source'']\\) print\\(\\) for row in data[''scores''][:6]: print\\(f\"\"{row[''ticker'']:6} {row[''signal'']:5} score={row[''score'']:.3f} contract_growth={row[''contract_growth'']:.3f}\"\"\\) \")"
+    ]
+  }
+}

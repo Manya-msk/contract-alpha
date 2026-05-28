@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import statistics
 from datetime import date
 from math import log1p
+from typing import Optional
 
 import pandas as pd
 from dateutil.relativedelta import relativedelta
+from sqlalchemy.orm import Session
 
 
 def _growth(current: float, previous: float) -> float:
@@ -12,13 +15,13 @@ def _growth(current: float, previous: float) -> float:
         return 0.0
     if previous <= 0:
         return 1.0
-    return max(min((current - previous) / previous, 2.0), -1.0)
+    return max(min((current - previous) / previous, 2.0), -0.5)
 
 
 def _signal(score: float) -> str:
-    if score > 0.4:
+    if score > 0.35:
         return "BUY"
-    if score > 0.2:
+    if score > 0.15:
         return "HOLD"
     return "AVOID"
 
@@ -28,9 +31,14 @@ def score_companies(
     jobs: pd.DataFrame,
     cutoff_date: str | date,
     horizon_months: int = 12,
+    sentiment_scores: dict[str, float] | None = None,
+    db: Optional[Session] = None,
 ) -> list[dict]:
+    from models import HiringSignal  # local import to avoid circular deps
+
     cutoff = pd.to_datetime(cutoff_date).date()
     window_months = max(int(horizon_months), 1)
+    sentiment_scores = sentiment_scores or {}
     tickers = sorted(set(contracts.get("ticker", [])) | set(jobs.get("ticker", [])))
     totals = {
         ticker: float(contracts.loc[contracts["ticker"] == ticker, "amount"].sum())
@@ -38,6 +46,32 @@ def score_companies(
         if not contracts.empty
     }
     max_log_awards = max([log1p(value) for value in totals.values()] or [1.0])
+
+    # Load real hiring scores from DB if available
+    real_hiring: dict[str, float] = {}
+    if db is not None:
+        for row in db.query(HiringSignal).all():
+            real_hiring[row.ticker] = float(row.hiring_score)
+
+    # Pre-compute contract growth for all tickers so we can rank relatively.
+    # When seeded data creates universal decline, absolute growth carries no signal —
+    # relative ranking (vs median) preserves differentiation.
+    _cs = cutoff - relativedelta(months=window_months)
+    _ps = cutoff - relativedelta(months=window_months * 2)
+    raw_growths: dict[str, float] = {}
+    for _ticker in tickers:
+        _tc = contracts[contracts["ticker"] == _ticker] if not contracts.empty else pd.DataFrame()
+        if not _tc.empty:
+            _dates = pd.to_datetime(_tc["award_date"]).dt.date
+            _ca = float(_tc.loc[(_dates > _cs) & (_dates <= cutoff), "amount"].sum())
+            _pa = float(_tc.loc[(_dates > _ps) & (_dates <= cutoff), "amount"].sum())
+        else:
+            _ca = _pa = 0.0
+        raw_growths[_ticker] = _growth(_ca, _pa)
+
+    _gvals = list(raw_growths.values())
+    growth_median = statistics.median(_gvals) if _gvals else 0.0
+    growth_spread = max(max(abs(v - growth_median) for v in _gvals), 0.01) if _gvals else 1.0
 
     results = []
     for ticker in tickers:
@@ -54,46 +88,47 @@ def score_companies(
             else ""
         )
 
-        current_contract_start = cutoff - relativedelta(months=window_months)
-        previous_contract_start = cutoff - relativedelta(months=window_months * 2)
-        current_awards = (
-            ticker_contracts.loc[
-                (pd.to_datetime(ticker_contracts["award_date"]).dt.date > current_contract_start)
-                & (pd.to_datetime(ticker_contracts["award_date"]).dt.date <= cutoff),
-                "amount",
-            ].sum()
-            if not ticker_contracts.empty
-            else 0
-        )
-        previous_awards = (
-            ticker_contracts.loc[
-                (pd.to_datetime(ticker_contracts["award_date"]).dt.date > previous_contract_start)
-                & (pd.to_datetime(ticker_contracts["award_date"]).dt.date <= current_contract_start),
-                "amount",
-            ].sum()
-            if not ticker_contracts.empty
-            else 0
-        )
-        contract_growth = _growth(float(current_awards), float(previous_awards))
+        contract_growth = raw_growths.get(ticker, 0.0)
+        # Normalize relative to the peer group so the signal is meaningful even when
+        # all companies are declining (seeded data) or all are growing (boom cycle).
+        relative_growth = (contract_growth - growth_median) / growth_spread
 
-        current_job_start = cutoff - relativedelta(months=window_months)
-        previous_job_start = cutoff - relativedelta(months=window_months * 2)
-        if not ticker_jobs.empty:
-            job_dates = pd.to_datetime(ticker_jobs["date"]).dt.date
-            current_jobs = ticker_jobs.loc[
-                (job_dates > current_job_start) & (job_dates <= cutoff), "open_roles"
-            ].mean()
-            previous_jobs = ticker_jobs.loc[
-                (job_dates > previous_job_start) & (job_dates <= current_job_start), "open_roles"
-            ].mean()
+        # Use real hiring score from DB if available, else fall back to synthetic
+        if ticker in real_hiring:
+            hiring_growth = real_hiring[ticker]
         else:
-            current_jobs = previous_jobs = 0
-        hiring_growth = _growth(float(current_jobs or 0), float(previous_jobs or 0))
-        # Hiring data is synthetic in the MVP. Prevent negative mock swings from dragging scores down.
-        hiring_growth = max(hiring_growth, 0.0)
+            current_job_start = cutoff - relativedelta(months=window_months)
+            previous_job_start = cutoff - relativedelta(months=window_months * 2)
+            if not ticker_jobs.empty:
+                job_dates = pd.to_datetime(ticker_jobs["date"]).dt.date
+                current_jobs = ticker_jobs.loc[
+                    (job_dates > current_job_start) & (job_dates <= cutoff), "open_roles"
+                ].mean()
+                previous_jobs = ticker_jobs.loc[
+                    (job_dates > previous_job_start) & (job_dates <= current_job_start), "open_roles"
+                ].mean()
+            else:
+                current_jobs = previous_jobs = 0
+            hiring_growth = _growth(float(current_jobs or 0), float(previous_jobs or 0))
+            hiring_growth = max(hiring_growth, 0.0)
 
         award_size = log1p(totals.get(ticker, 0.0)) / max_log_awards if max_log_awards else 0.0
-        score = (0.4 * contract_growth) + (0.3 * hiring_growth) + (0.3 * award_size)
+
+        sentiment = float(sentiment_scores.get(ticker, 0.0))
+        sentiment_normalized = (sentiment + 1) / 2
+
+        total = totals.get(ticker, 0)
+        volume_bonus = 0.15 if total > 10_000_000_000 else (0.10 if total > 5_000_000_000 else 0.0)
+        momentum_bonus = 0.10 if contract_growth > 0 else 0.0
+        score = (
+            (0.30 * max(relative_growth, -1.0))
+            + (0.20 * hiring_growth)
+            + (0.30 * award_size)
+            + (0.15 * sentiment_normalized)
+            + volume_bonus
+            + momentum_bonus
+        )
+
         results.append(
             {
                 "ticker": ticker,
@@ -103,6 +138,7 @@ def score_companies(
                 "contract_growth": round(contract_growth, 3),
                 "hiring_growth": round(hiring_growth, 3),
                 "award_size": round(award_size, 3),
+                "sentiment_score": round(sentiment, 3),
                 "total_awards": round(totals.get(ticker, 0.0), 2),
                 "trigger_award": trigger_award,
             }

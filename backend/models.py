@@ -49,5 +49,18 @@ class SerpCache(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime)
 
 
+class HiringSignal(Base):
+    __tablename__ = "hiring_signals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    ticker: Mapped[str] = mapped_column(String(12), index=True)
+    company: Mapped[str] = mapped_column(String(120))
+    collection_date: Mapped[date] = mapped_column(Date, index=True)
+    total_roles: Mapped[int] = mapped_column(Integer)
+    tech_roles: Mapped[int] = mapped_column(Integer)
+    ops_roles: Mapped[int] = mapped_column(Integer)
+    hiring_score: Mapped[float] = mapped_column(Float)
+
+
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)

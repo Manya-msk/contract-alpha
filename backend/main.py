@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
 from fastapi import Depends, FastAPI, Query
@@ -16,6 +17,8 @@ from services.discovery import discover_public_contract_companies
 from services.evidence import get_contract_evidence
 from services.jobs import generate_hiring_signals, get_jobs
 from services.scoring import score_companies
+from services.sentiment import get_sentiment_scores
+from services.thesis import generate_theses
 
 
 load_env()
@@ -53,6 +56,31 @@ def seed_database() -> dict:
 def health() -> dict:
     return {"status": "ok"}
 
+@app.get("/debug-thesis")
+def debug_thesis() -> dict:
+    import os
+    import requests
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        return {"error": "no GROQ_API_KEY found", "env_keys": list(os.environ.keys())}
+    try:
+        response = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "llama3-8b-8192",
+                "messages": [{"role": "user", "content": "say hello"}],
+                "max_tokens": 10,
+            },
+            timeout=15,
+        )
+        return {"status": response.status_code, "body": response.json()}
+    except Exception as e:
+        return {"error": str(e)}
+
 
 class SimulationRequest(BaseModel):
     cutoff_date: date
@@ -64,25 +92,55 @@ def build_simulation(
     db: Session,
     cutoff_date: date,
     horizon_months: int,
-    use_live_contracts: bool = False,
+    use_live_contracts: bool = True,
 ) -> dict:
     discovery = discover_public_contract_companies(cutoff_date, horizon_months) if use_live_contracts else {}
     contracts = discovery.get("contracts") if discovery else get_contracts(db, cutoff_date, use_live=False)
     tickers = [] if contracts is None or contracts.empty else contracts["ticker"].dropna().astype(str).tolist()
     jobs = generate_hiring_signals(tickers, cutoff_date, horizon_months)
-    scores = score_companies(contracts, jobs, cutoff_date, horizon_months)
+
+    company_list = []
+    if contracts is not None and not contracts.empty:
+        seen = set()
+        for _, row in contracts.iterrows():
+            t = str(row["ticker"])
+            if t not in seen:
+                seen.add(t)
+                company_list.append({"ticker": t, "company": str(row["company"])})
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        sentiment_future = executor.submit(
+            get_sentiment_scores,
+            db=db,
+            companies=company_list[:10],
+            cutoff_year=cutoff_date.year,
+            max_calls=5,
+        )
+        sentiment_scores = sentiment_future.result()
+
+    scores = score_companies(contracts, jobs, cutoff_date, horizon_months, sentiment_scores, db=db)
     evidence = get_contract_evidence(db, scores, cutoff_date.year, max_calls=5)
     scores = [
         {
             **row,
             "evidence": evidence.get(
                 row["ticker"],
-                {"title": "No evidence available", "url": "", "snippet": "", "source": "none"},
+                [{"title": "No evidence available", "url": "", "snippet": "", "source": "none"}],
             ),
         }
         for row in scores
     ]
-    buys = [row["ticker"] for row in scores if row["signal"] == "BUY"] or [row["ticker"] for row in scores[:3]]
+    theses = generate_theses(scores, max_calls=10)
+    scores = [
+        {
+            **row,
+            "thesis": theses.get(row["ticker"], ""),
+        }
+        for row in scores
+    ]
+
+    buy_candidates = [row["ticker"] for row in scores if row["signal"] == "BUY"]
+    buys = buy_candidates[:3] if len(buy_candidates) >= 3 else [row["ticker"] for row in scores[:3]]
     backtest = run_backtest(buys, cutoff_date, horizon_months)
     return {
         "cutoff_date": cutoff_date.isoformat(),

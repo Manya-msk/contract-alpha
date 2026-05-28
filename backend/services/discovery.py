@@ -220,7 +220,7 @@ def _extract_awards(results: list[dict]) -> pd.DataFrame:
 
 
 def _lookback_months(horizon_months: int) -> int:
-    return max(int(horizon_months) * 2, 24)
+    return max(int(horizon_months) * 3, 36)
 
 
 def fetch_usaspending_awards(cutoff_date: str | date, horizon_months: int) -> pd.DataFrame:

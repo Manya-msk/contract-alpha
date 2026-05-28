@@ -35,8 +35,8 @@ def seed() -> None:
             for idx, (ticker, company) in enumerate(FALLBACK_PUBLIC_COMPANIES):
                 seed_value = _seed_int(ticker)
                 base_contract = 24_000_000 + (seed_value % 115_000_000)
-                trend = ((seed_value % 13) - 2) / 100
-                late_cycle = 0.45 if (seed_value + month) % 19 > 13 and month >= 24 else 0
+                trend = ((seed_value % 13) - 4) / 100
+                late_cycle = 0.65 if (seed_value + month) % 7 > 4 and month >= 18 else 0
                 momentum = max(0.35, 1 + (trend * month) + late_cycle)
                 amount = base_contract * momentum * (0.74 + ((month + idx) % 6) * 0.08)
                 db.add(

@@ -38,25 +38,28 @@ def _extract_organic_results(payload: dict) -> list[dict]:
     return []
 
 
-def _parse_serp_response(payload: dict, company: str, year: int) -> dict:
+def _parse_serp_response(payload: dict, company: str, year: int) -> list[dict]:
     organic = _extract_organic_results(payload)
+    results = []
     for result in organic:
         title = str(result.get("title") or "")
         description = str(result.get("description") or result.get("snippet") or "")
         text = f"{title} {description}".lower()
         if "contract" in text or "award" in text or "government" in text:
-            return {
+            results.append({
                 "title": title or f"{company} contract result",
                 "url": result.get("link") or result.get("url") or "",
                 "snippet": description or f"Search result for {company} government contract award {year}",
                 "source": "brightdata_serp",
-            }
-    return _fallback_evidence(company, year)
+            })
+            if len(results) >= 3:
+                break
+    return results if results else [_fallback_evidence(company, year)]
 
 
-def get_contract_evidence(db: Session, companies: list[dict], cutoff_year: int, max_calls: int = 5) -> dict[str, dict]:
+def get_contract_evidence(db: Session, companies: list[dict], cutoff_year: int, max_calls: int = 5) -> dict[str, list[dict]]:
     init_db()
-    evidence: dict[str, dict] = {}
+    evidence: dict[str, list[dict]] = {}
     enabled = env_bool("BRIGHTDATA_ENABLED", False)
     api_key = os.getenv("BRIGHTDATA_SERP_KEY")
     zone = os.getenv("BRIGHTDATA_SERP_ZONE", "serp_api1")
@@ -72,11 +75,11 @@ def get_contract_evidence(db: Session, companies: list[dict], cutoff_year: int, 
                 evidence[ticker] = _parse_serp_response(json.loads(cached.response_json), name, cutoff_year)
                 continue
             except Exception:
-                evidence[ticker] = _fallback_evidence(name, cutoff_year)
+                evidence[ticker] = [_fallback_evidence(name, cutoff_year)]
                 continue
 
         if not enabled or not api_key or calls >= max_calls:
-            evidence[ticker] = _fallback_evidence(name, cutoff_year)
+            evidence[ticker] = [_fallback_evidence(name, cutoff_year)]
             continue
 
         try:
@@ -102,6 +105,6 @@ def get_contract_evidence(db: Session, companies: list[dict], cutoff_year: int, 
             evidence[ticker] = _parse_serp_response(payload, name, cutoff_year)
         except Exception:
             db.rollback()
-            evidence[ticker] = _fallback_evidence(name, cutoff_year)
+            evidence[ticker] = [_fallback_evidence(name, cutoff_year)]
 
     return evidence
