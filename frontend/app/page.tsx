@@ -85,7 +85,7 @@ function asNumber(value: unknown, fallback = 0) {
 }
 
 export default function Home() {
-  const [cutoffDate, setCutoffDate] = useState("2023-01-01");
+  const [cutoffDate, setCutoffDate] = useState("2022-01-01");
   const [horizonMonths, setHorizonMonths] = useState(12);
   const [data, setData] = useState<SignalResponse | null>(null);
   const [loading, setLoading] = useState(false);

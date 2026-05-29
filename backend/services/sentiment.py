@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
@@ -16,7 +17,6 @@ AIML_ENDPOINT = "https://api.aimlapi.com/v1/chat/completions"
 def _score_sentiment_with_llm(ticker: str, company: str, cutoff_year: int) -> float:
     api_key = os.getenv("AIML_API_KEY")
     if not api_key:
-        print(f"Sentiment [{ticker}]: no AIML_API_KEY set")
         return 0.0
 
     prompt = (
@@ -26,29 +26,31 @@ def _score_sentiment_with_llm(ticker: str, company: str, cutoff_year: int) -> fl
         f"at that time. Only return the number, nothing else."
     )
 
-    try:
-        response = requests.post(
-            AIML_ENDPOINT,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": "gpt-4o-mini",
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 10,
-                "temperature": 0.0,
-            },
-            timeout=15,
-        )
-        response.raise_for_status()
-        raw = response.json()["choices"][0]["message"]["content"].strip()
-        score = max(-1.0, min(1.0, float(raw)))
-        print(f"Sentiment [{ticker}]: {score}")
-        return score
-    except Exception as e:
-        print(f"Sentiment error for {company} ({ticker}): {e}")
-        return 0.0
+    for attempt in range(2):
+        try:
+            response = requests.post(
+                AIML_ENDPOINT,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "gpt-4o-mini",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 10,
+                    "temperature": 0.0,
+                },
+                timeout=15,
+            )
+            response.raise_for_status()
+            raw = response.json()["choices"][0]["message"]["content"].strip()
+            return max(-1.0, min(1.0, float(raw)))
+        except Exception as e:
+            if attempt == 0:
+                time.sleep(2)
+            else:
+                print(f"Sentiment error for {company} ({ticker}): {e}")
+    return 0.0
 
 
 def get_sentiment_scores(
@@ -81,7 +83,7 @@ def get_sentiment_scores(
         return ticker, f"sentiment_aiml:{ticker}:{cutoff_year}", score
 
     with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = {executor.submit(call, c): c for c in to_fetch[:max_calls]}
+        futures = {executor.submit(call, c): c for c in to_fetch[:max_calls] if c}
         for future in as_completed(futures):
             try:
                 ticker, cache_key, score = future.result()

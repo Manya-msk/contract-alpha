@@ -56,31 +56,6 @@ def seed_database() -> dict:
 def health() -> dict:
     return {"status": "ok"}
 
-@app.get("/debug-thesis")
-def debug_thesis() -> dict:
-    import os
-    import requests
-    api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
-        return {"error": "no GROQ_API_KEY found", "env_keys": list(os.environ.keys())}
-    try:
-        response = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": "llama3-8b-8192",
-                "messages": [{"role": "user", "content": "say hello"}],
-                "max_tokens": 10,
-            },
-            timeout=15,
-        )
-        return {"status": response.status_code, "body": response.json()}
-    except Exception as e:
-        return {"error": str(e)}
-
 
 class SimulationRequest(BaseModel):
     cutoff_date: date
@@ -112,9 +87,9 @@ def build_simulation(
         sentiment_future = executor.submit(
             get_sentiment_scores,
             db=db,
-            companies=company_list[:10],
+            companies=company_list,
             cutoff_year=cutoff_date.year,
-            max_calls=5,
+            max_calls=15,
         )
         sentiment_scores = sentiment_future.result()
 
@@ -130,7 +105,7 @@ def build_simulation(
         }
         for row in scores
     ]
-    theses = generate_theses(scores, max_calls=10)
+    theses = generate_theses(scores, max_calls=30)
     scores = [
         {
             **row,

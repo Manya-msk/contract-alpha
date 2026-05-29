@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
@@ -39,33 +40,39 @@ Signals:
 
 Output only the 3 bullet lines, nothing else."""
 
-    try:
-        response = requests.post(
-            "https://api.aimlapi.com/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": "gpt-4o-mini",
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 120,
-                "temperature": 0.3,
-            },
-            timeout=15,
-        )
-        response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        print(f"Thesis error for {ticker}: {e}")
-        return ""
+    for attempt in range(2):
+        try:
+            response = requests.post(
+                "https://api.aimlapi.com/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "gpt-4o-mini",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 120,
+                    "temperature": 0.3,
+                },
+                timeout=15,
+            )
+            response.raise_for_status()
+            return response.json()["choices"][0]["message"]["content"].strip()
+        except Exception as e:
+            if attempt == 0:
+                time.sleep(2)
+            else:
+                print(f"Thesis error for {ticker}: {e}")
+    return ""
 
 
 def generate_theses(scores: list[dict], max_calls: int = 10) -> dict[str, str]:
     theses: dict[str, str] = {}
     subset = scores[:max_calls]
 
-    def call(row: dict) -> tuple[str, str]:
+    def call(idx_and_row: tuple) -> tuple[str, str]:
+        idx, row = idx_and_row
+        time.sleep(idx * 0.2)  # stagger calls to avoid burst rate limiting
         return row["ticker"], generate_thesis(
             ticker=row["ticker"],
             company=row["company"],
@@ -78,8 +85,8 @@ def generate_theses(scores: list[dict], max_calls: int = 10) -> dict[str, str]:
             signal=row.get("signal", "HOLD"),
         )
 
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = {executor.submit(call, row): row for row in subset}
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = {executor.submit(call, (i, row)): row for i, row in enumerate(subset)}
         for future in as_completed(futures):
             try:
                 ticker, thesis = future.result()
