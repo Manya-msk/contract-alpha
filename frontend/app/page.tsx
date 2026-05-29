@@ -23,6 +23,12 @@ type Score = {
   hiring_growth: number;
   award_size: number;
   sentiment_score: number;
+  pipeline_count: number;
+  pipeline_signal: number;
+  pipeline_top_notice: string;
+  pipeline_top_agency: string;
+  pipeline_top_url: string;
+  pipeline_top_deadline: string;
   total_awards: number;
   trigger_award: string;
   thesis: string;
@@ -244,6 +250,7 @@ export default function Home() {
                     <th className="px-3 py-2">Contracts</th>
                     <th className="px-3 py-2">Hiring</th>
                     <th className="px-3 py-2">Awards</th>
+                    <th className="px-3 py-2">Pipeline</th>
                     <th className="px-3 py-2">Sentiment</th>
                     <th className="px-3 py-2">Trigger award</th>
                     <th className="px-3 py-2">Thesis</th>
@@ -254,7 +261,7 @@ export default function Home() {
                   {loading && scores.length === 0
                     ? Array.from({ length: 5 }).map((_, i) => (
                         <tr key={i} className="border-t border-ink/10 bg-white animate-pulse">
-                          {Array.from({ length: 11 }).map((_, j) => (
+                          {Array.from({ length: 12 }).map((_, j) => (
                             <td key={j} className="px-3 py-4">
                               <div className="h-3 rounded bg-ink/10" />
                             </td>
@@ -283,6 +290,46 @@ export default function Home() {
                       <td className="px-3 py-3">{percent.format(asNumber(row.contract_growth))}</td>
                       <td className="px-3 py-3">{percent.format(asNumber(row.hiring_growth))}</td>
                       <td className="px-3 py-3">{currency.format(asNumber(row.total_awards))}</td>
+                      <td className="max-w-56 px-3 py-3 text-xs">
+                        {asNumber(row.pipeline_count) > 0 ? (
+                          <>
+                            <div className="flex items-center gap-2">
+                              <span className="rounded bg-signal/15 px-2 py-1 font-bold text-signal">
+                                {asNumber(row.pipeline_count)} pending
+                              </span>
+                              {row.pipeline_top_agency ? (
+                                <span className="text-ink/55">{row.pipeline_top_agency}</span>
+                              ) : null}
+                            </div>
+                            {row.pipeline_top_notice ? (
+                              <div className="mt-1 text-ink/65 leading-snug">
+                                {row.pipeline_top_url ? (
+                                  <a
+                                    className="underline hover:text-signal"
+                                    href={row.pipeline_top_url}
+                                    rel="noreferrer"
+                                    target="_blank"
+                                    title={row.pipeline_top_notice}
+                                  >
+                                    {row.pipeline_top_notice.length > 80
+                                      ? row.pipeline_top_notice.slice(0, 80) + "…"
+                                      : row.pipeline_top_notice}
+                                  </a>
+                                ) : (
+                                  row.pipeline_top_notice
+                                )}
+                              </div>
+                            ) : null}
+                            {row.pipeline_top_deadline ? (
+                              <div className="mt-1 text-ink/45 text-[10px]">
+                                deadline {row.pipeline_top_deadline}
+                              </div>
+                            ) : null}
+                          </>
+                        ) : (
+                          <span className="text-ink/40 italic">No pending notices</span>
+                        )}
+                      </td>
                       <td className="px-3 py-3">
                         <span
                           className={`rounded px-2 py-1 text-xs font-semibold ${

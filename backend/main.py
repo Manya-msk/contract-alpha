@@ -16,6 +16,7 @@ from services.contracts import get_contracts
 from services.discovery import discover_public_contract_companies
 from services.evidence import get_contract_evidence
 from services.jobs import generate_hiring_signals, get_jobs
+from services.opportunities import get_pipeline_signals
 from services.scoring import score_companies
 from services.sentiment import get_sentiment_scores
 from services.thesis import generate_theses
@@ -91,9 +92,26 @@ def build_simulation(
             cutoff_year=cutoff_date.year,
             max_calls=15,
         )
+        pipeline_future = executor.submit(
+            get_pipeline_signals,
+            db=db,
+            companies=company_list,
+            cutoff_date=cutoff_date,
+            lookback_days=90,
+            max_calls=15,
+        )
         sentiment_scores = sentiment_future.result()
+        pipeline_data = pipeline_future.result()
 
-    scores = score_companies(contracts, jobs, cutoff_date, horizon_months, sentiment_scores, db=db)
+    scores = score_companies(
+        contracts,
+        jobs,
+        cutoff_date,
+        horizon_months,
+        sentiment_scores,
+        pipeline_data=pipeline_data,
+        db=db,
+    )
     evidence = get_contract_evidence(db, scores, cutoff_date.year, max_calls=5)
     scores = [
         {

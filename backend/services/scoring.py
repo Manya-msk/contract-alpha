@@ -32,6 +32,7 @@ def score_companies(
     cutoff_date: str | date,
     horizon_months: int = 12,
     sentiment_scores: dict[str, float] | None = None,
+    pipeline_data: dict[str, dict] | None = None,
     db: Optional[Session] = None,
 ) -> list[dict]:
     from models import HiringSignal  # local import to avoid circular deps
@@ -39,6 +40,7 @@ def score_companies(
     cutoff = pd.to_datetime(cutoff_date).date()
     window_months = max(int(horizon_months), 1)
     sentiment_scores = sentiment_scores or {}
+    pipeline_data = pipeline_data or {}
     tickers = sorted(set(contracts.get("ticker", [])) | set(jobs.get("ticker", [])))
     totals = {
         ticker: float(contracts.loc[contracts["ticker"] == ticker, "amount"].sum())
@@ -46,6 +48,10 @@ def score_companies(
         if not contracts.empty
     }
     max_log_awards = max([log1p(value) for value in totals.values()] or [1.0])
+
+    # Log-normalize pipeline opportunity counts so a 50-notice giant doesn't dominate.
+    pipeline_counts = {t: float(pipeline_data.get(t, {}).get("count", 0)) for t in tickers}
+    max_log_pipeline = max([log1p(v) for v in pipeline_counts.values()] or [1.0])
 
     # Load real hiring scores from DB if available
     real_hiring: dict[str, float] = {}
@@ -117,14 +123,23 @@ def score_companies(
         sentiment = float(sentiment_scores.get(ticker, 0.0))
         sentiment_normalized = (sentiment + 1) / 2
 
+        # Pipeline signal: log-normalized count of pre-award SAM.gov notices
+        # mentioning this company in the lookback window.
+        pipeline_info = pipeline_data.get(ticker, {}) if pipeline_data else {}
+        pipeline_count = float(pipeline_info.get("count", 0))
+        pipeline_signal = log1p(pipeline_count) / max_log_pipeline if max_log_pipeline else 0.0
+
         total = totals.get(ticker, 0)
         volume_bonus = 0.15 if total > 10_000_000_000 else (0.10 if total > 5_000_000_000 else 0.0)
         momentum_bonus = 0.10 if contract_growth > 0 else 0.0
+        # Rebalanced weights with pipeline as a 6th signal (25%):
+        # contract_growth 25%, hiring 15%, award_size 25%, sentiment 10%, pipeline 25%
         score = (
-            (0.30 * max(relative_growth, -1.0))
-            + (0.20 * hiring_growth)
-            + (0.30 * award_size)
-            + (0.15 * sentiment_normalized)
+            (0.25 * max(relative_growth, -1.0))
+            + (0.15 * hiring_growth)
+            + (0.25 * award_size)
+            + (0.10 * sentiment_normalized)
+            + (0.25 * pipeline_signal)
             + volume_bonus
             + momentum_bonus
         )
@@ -139,6 +154,12 @@ def score_companies(
                 "hiring_growth": round(hiring_growth, 3),
                 "award_size": round(award_size, 3),
                 "sentiment_score": round(sentiment, 3),
+                "pipeline_count": int(pipeline_count),
+                "pipeline_signal": round(pipeline_signal, 3),
+                "pipeline_top_notice": pipeline_info.get("top_notice", ""),
+                "pipeline_top_agency": pipeline_info.get("top_agency", ""),
+                "pipeline_top_url": pipeline_info.get("top_notice_url", ""),
+                "pipeline_top_deadline": pipeline_info.get("top_deadline", ""),
                 "total_awards": round(totals.get(ticker, 0.0), 2),
                 "trigger_award": trigger_award,
             }
