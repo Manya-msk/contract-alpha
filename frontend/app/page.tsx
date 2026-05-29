@@ -227,11 +227,11 @@ export default function Home() {
             <div className="mb-4 flex flex-wrap items-start gap-2 rounded border border-ink/10 bg-paper/80 p-3 text-xs">
               <span className="mr-1 font-semibold text-ink/75">Signal legend:</span>
               <span className="rounded bg-signal/15 px-2 py-1 font-bold text-signal">BUY</span>
-              <span className="text-ink/70">Score {">"} 0.4 - strong contract growth + hiring signals</span>
+              <span className="text-ink/70">Score {">"} 0.35 - strong contract growth + hiring signals</span>
               <span className="rounded bg-caution/15 px-2 py-1 font-bold text-caution">HOLD</span>
-              <span className="text-ink/70">Score 0.2-0.4 - moderate signals, watch closely</span>
+              <span className="text-ink/70">Score 0.15–0.35 - moderate signals, watch closely</span>
               <span className="rounded bg-danger/15 px-2 py-1 font-bold text-danger">AVOID</span>
-              <span className="text-ink/70">Score {"<"} 0.2 - weak or declining contract activity</span>
+              <span className="text-ink/70">Score {"<"} 0.15 - weak or declining contract activity</span>
             </div>
             <div className="overflow-x-auto rounded border border-ink/10">
               <table className="w-full min-w-[1400px] border-collapse text-left text-sm">

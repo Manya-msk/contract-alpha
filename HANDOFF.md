@@ -10,7 +10,7 @@ ContractAlpha is a government contract intelligence platform built for the **Web
 3. **Sentiment scoring** — AI/ML API (`gpt-4o-mini`) called with ticker + year, returns -1.0 to 1.0. Results cached in `serp_cache` table with key `sentiment_aiml:{ticker}:{year}`.
 4. **Scoring** — 5-signal weighted composite. Signals: BUY > 0.35, HOLD > 0.15, AVOID otherwise.
 5. **Evidence** — Bright Data SERP lookup for contract-related news. Returns up to 3 results per company, cached. Falls back to a placeholder if SERP is unavailable.
-6. **Thesis generation** — parallel Groq LLM calls (`llama-3.3-70b-versatile`) for 3 analyst-style bullet points per company. Format: `- [observation with number] — [implication for stock]`
+6. **Thesis generation** — parallel AI/ML API calls (`gpt-4o-mini`) for 3 analyst-style bullet points per company. Format: `- [observation with number] — [implication for stock]`
 7. **Backtest** — buy top-3 BUY-rated tickers on cutoff date, hold through horizon, compare to SPY via yfinance.
 
 ### Frontend
@@ -28,7 +28,7 @@ Next.js 14 + TypeScript + Tailwind + Recharts. Single-page app with:
 | Component | Status |
 |---|---|
 | `backend/services/sentiment.py` | AI/ML API sentiment scoring (`gpt-4o-mini`), parallelized, cached in SQLite |
-| `backend/services/thesis.py` | Groq LLM (`llama-3.3-70b-versatile`) generates 3-bullet analyst thesis per company, parallelized with `ThreadPoolExecutor` |
+| `backend/services/thesis.py` | AI/ML API (`gpt-4o-mini`) generates 3-bullet analyst thesis per company, parallelized with `ThreadPoolExecutor` (2 workers, staggered 0.2s) |
 | `backend/services/scoring.py` | 5-signal model: `contract_growth` (relative percentile vs peer median), `hiring_growth`, `award_size` (log-normalized), `sentiment`, `volume_bonus` + `momentum_bonus` |
 | `backend/scripts/collect_hiring_data.py` | One-time Bright Data SERP script — scrapes Google Jobs for 14 defense/tech companies, stores real hiring signals in `hiring_signals` SQLite table |
 | `backend/models.py` | `HiringSignal` model added (`ticker`, `company`, `collection_date`, `total_roles`, `tech_roles`, `ops_roles`, `hiring_score`) |
@@ -120,7 +120,7 @@ sqlite3 backend/contract_alpha.db "SELECT query, substr(response_json,1,60) FROM
 | `BRIGHTDATA_SERP_KEY` | Bright Data API key for SERP zone requests |
 | `BRIGHTDATA_SERP_ZONE` | Bright Data zone name (currently `serp_api1`) |
 | `AIML_API_KEY` | AI/ML API key — sentiment scoring via `gpt-4o-mini`. Hackathon prize-eligible. |
-| `GROQ_API_KEY` | Used for thesis generation via `llama-3.3-70b-versatile` |
+| `GROQ_API_KEY` | Not currently used — thesis switched to AI/ML API. Can be removed from `.env`. |
 | `GEMINI_API_KEY` | Not currently used. Reserved. |
 
 ---
@@ -133,8 +133,8 @@ When seeded data generates universal YoY decline, raw `contract_growth` carries 
 ### Why AI/ML API for sentiment
 Bright Data news SERP (`serp_api1` zone with `tbm=nws`) was returning empty `organic` arrays. Rather than debug the zone format before the hackathon deadline, we switched to prompting `gpt-4o-mini` directly with company name + year. Always returns a non-zero score, no SERP call needed. Tradeoff: score reflects LLM training bias, not real-time news.
 
-### Why Groq for thesis
-`llama-3.3-70b-versatile` on Groq produces well-structured analyst-style bullet points. Faster than AI/ML API for generation. Five parallel workers via `ThreadPoolExecutor` bring total thesis time to ~3–5s for 10 companies.
+### Why AI/ML API for thesis
+Both thesis and sentiment use AI/ML API (`gpt-4o-mini`) — single API key, consistent output quality, hackathon prize-eligible. Thesis calls are staggered 0.2s apart with 2 workers to avoid burst rate limiting. Retry logic (2 attempts, 2s sleep) handles transient failures.
 
 ### Why SQLite cache
 All LLM and SERP results cached in `serp_cache` (key → JSON string). Second run with same cutoff is nearly instant. Cache keys: `sentiment_aiml:{ticker}:{year}` for sentiment, raw query string for SERP evidence.
@@ -176,7 +176,7 @@ backend/
     jobs.py            — Hiring signal computation (synthetic fallback)
     scoring.py         — 5-signal composite; relative contract_growth ranking vs peer median
     sentiment.py       — AI/ML API sentiment (parallel, cached in serp_cache)
-    thesis.py          — Groq LLM 3-bullet thesis generation (parallel, ThreadPoolExecutor)
+    thesis.py          — AI/ML API gpt-4o-mini 3-bullet thesis generation (parallel, staggered)
   scripts/
     __init__.py        — Empty package marker
     collect_hiring_data.py — One-time Bright Data SERP scraper → hiring_signals table
