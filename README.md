@@ -4,6 +4,8 @@ Government contract intelligence platform built for the **WebDataUnlocked Hackat
 
 Pulls US federal contract award data, maps recipients to public tickers, scores them on 4 signals (contract growth, hiring, award size, sentiment), surfaces SAM.gov pre-award pipeline notices, generates analyst-style theses via AI, and backtests the resulting portfolio against SPY.
 
+APP URL: https://contract-alpha-pink.vercel.app/
+
 ## Signals
 
 | Signal | Source | Weight |
@@ -15,8 +17,6 @@ Pulls US federal contract award data, maps recipients to public tickers, scores 
 | Pipeline (pre-award notices) | SAM.gov Opportunities API | displayed, not scored |
 
 Signal thresholds: **BUY** > 0.35 · **HOLD** > 0.15 · **AVOID** otherwise
-
-APP URL: https://contract-alpha-pink.vercel.app/
 
 ## Backend
 
