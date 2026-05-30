@@ -71,7 +71,7 @@ type SignalResponse = {
   };
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+const API_BASE = "https://contract-alpha-production.up.railway.app";
 
 const currency = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -389,7 +389,6 @@ export default function Home() {
               </table>
             </div>
           </div>
-
         </section>
 
         <section className="rounded-md border border-ink/10 bg-white/85 p-4 shadow-panel">
@@ -493,7 +492,7 @@ function Metric({ label, value, tooltip }: { label: string; value: string; toolt
     <div className="rounded border border-white/15 bg-white/10 px-2 py-3">
       <div className="flex items-center justify-center gap-1 text-xs uppercase text-white/55">
         <span>{label}</span>
-        {tooltip ? <Info size={12} className="text-white/70" title={tooltip} /> : null}
+        {tooltip ? <Info size={12} className="text-white/70" aria-label={tooltip} /> : null}
       </div>
       <div className="mt-1 text-lg font-semibold">{value}</div>
     </div>
