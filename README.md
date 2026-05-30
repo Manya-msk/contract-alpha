@@ -16,6 +16,8 @@ Pulls US federal contract award data, maps recipients to public tickers, scores 
 
 Signal thresholds: **BUY** > 0.35 · **HOLD** > 0.15 · **AVOID** otherwise
 
+APP URL: https://contract-alpha-pink.vercel.app/
+
 ## Backend
 
 ```bash
