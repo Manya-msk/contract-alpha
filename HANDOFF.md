@@ -29,7 +29,8 @@ Next.js 14 + TypeScript + Tailwind + Recharts. Single-page app with:
 | Component | Status |
 |---|---|
 | `backend/services/sentiment.py` | AI/ML API sentiment scoring (`gpt-4o-mini`), parallelized, cached in SQLite |
-| `backend/services/thesis.py` | AI/ML API (`gpt-4o-mini`) generates 3-bullet analyst thesis per company, parallelized with `ThreadPoolExecutor` (2 workers, staggered 0.2s) |
+| `backend/services/thesis.py` | AI/ML API (`gpt-4o-mini`) generates 3-bullet analyst thesis per company, parallelized with `ThreadPoolExecutor` (3 workers, no stagger, in-process cache, 2-attempt retry) |
+| `backend/services/opportunities.py` | SAM.gov pre-award pipeline signal — bulk fetches up to 3000 notices, cached in `serp_cache`, 35-notice demo fallback when `SAM_API_KEY` missing |
 | `backend/services/scoring.py` | 5-signal model: `contract_growth` (relative percentile vs peer median), `hiring_growth`, `award_size` (log-normalized), `sentiment`, `volume_bonus` + `momentum_bonus` |
 | `backend/scripts/collect_hiring_data.py` | One-time Bright Data SERP script — scrapes Google Jobs for 14 defense/tech companies, stores real hiring signals in `hiring_signals` SQLite table |
 | `backend/models.py` | `HiringSignal` model added (`ticker`, `company`, `collection_date`, `total_roles`, `tech_roles`, `ops_roles`, `hiring_score`) |
@@ -125,7 +126,7 @@ When seeded data generates universal YoY decline, raw `contract_growth` carries 
 Bright Data news SERP (`serp_api1` zone with `tbm=nws`) was returning empty `organic` arrays. Rather than debug the zone format before the hackathon deadline, we switched to prompting `gpt-4o-mini` directly with company name + year. Always returns a non-zero score, no SERP call needed. Tradeoff: score reflects LLM training bias, not real-time news.
 
 ### Why AI/ML API for thesis
-Both thesis and sentiment use AI/ML API (`gpt-4o-mini`) — single API key, consistent output quality, hackathon prize-eligible. Thesis calls are staggered 0.2s apart with 2 workers to avoid burst rate limiting. Retry logic (2 attempts, 2s sleep) handles transient failures.
+Both thesis and sentiment use AI/ML API (`gpt-4o-mini`) — single API key, consistent output quality, hackathon prize-eligible. Thesis uses 3 workers with no stagger (profiling showed stagger added ~9s of sleep with no measurable reduction in rate-limit hits). Retry logic (2 attempts, 2s sleep) and an in-process `_thesis_cache` dict handle transient failures and avoid redundant calls within a session.
 
 ### Why SQLite cache
 All LLM and SERP results cached in `serp_cache` (key → JSON string). Second run with same cutoff is nearly instant. Cache keys: `sentiment_aiml:{ticker}:{year}` for sentiment, raw query string for SERP evidence.
