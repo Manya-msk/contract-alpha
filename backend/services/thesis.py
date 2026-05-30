@@ -75,13 +75,14 @@ Write only the 3 bullets, no headers, no preamble."""
     return ""
 
 
-def generate_theses(scores: list[dict], max_calls: int = 30) -> dict[str, str]:
+def generate_theses(scores: list[dict], max_calls: int = 12) -> dict[str, str]:
     theses: dict[str, str] = {}
     subset = scores[:max_calls]
 
     def call(args: tuple) -> tuple[str, str]:
         idx, row = args
-        time.sleep(idx * 0.3)
+        # Stagger removed: profiling showed it added ~9s of pure sleep without
+        # measurably reducing rate-limit hits at 3 workers.
         return row["ticker"], generate_thesis(
             ticker=row["ticker"],
             company=row["company"],

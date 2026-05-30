@@ -123,7 +123,7 @@ def build_simulation(
         }
         for row in scores
     ]
-    theses = generate_theses(scores, max_calls=30)
+    theses = generate_theses(scores, max_calls=12)
     scores = [
         {
             **row,

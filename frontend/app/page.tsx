@@ -395,9 +395,9 @@ export default function Home() {
         <section className="rounded-md border border-ink/10 bg-white/85 p-4 shadow-panel">
           <h2 className="mb-1 text-lg font-semibold">Signal composition</h2>
           <p className="mb-4 text-sm text-ink/65">Top discovered public recipients by score</p>
-          <div className="h-80 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartScores}>
+          <div className="w-full overflow-x-auto" style={{ height: 340 }}>
+            {chartScores.length > 0 ? (
+              <BarChart width={1100} height={320} data={chartScores}>
                 <CartesianGrid stroke="#d8d7ce" strokeDasharray="3 3" />
                 <XAxis dataKey="ticker" />
                 <YAxis />
@@ -406,7 +406,11 @@ export default function Home() {
                 <Bar dataKey="hiring_growth" fill="#d18a22" name="Hiring growth" />
                 <Bar dataKey="award_size" fill="#587b7f" name="Award size" />
               </BarChart>
-            </ResponsiveContainer>
+            ) : (
+              <div className="flex h-full items-center justify-center text-sm text-ink/40">
+                {loading ? "Loading chart..." : "No data yet — run a simulation."}
+              </div>
+            )}
           </div>
         </section>
 
@@ -451,17 +455,31 @@ export default function Home() {
             <p className="mb-4 text-sm text-ink/65">
               Source: {revealed && data ? data.backtest.source : "hidden until reveal"}
             </p>
-            <div className="h-[380px] min-h-[350px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={revealed ? (data?.backtest.series ?? []).filter(p => p.portfolio > 0 && p.spy > 0 && p.portfolio < 10000 && p.spy < 10000) : []}>
-                  <CartesianGrid stroke="#d8d7ce" strokeDasharray="3 3" />
-                  <XAxis dataKey="date" minTickGap={24} />
-                  <YAxis domain={["dataMin - 5", "dataMax + 5"]} />
-                  <Tooltip />
-                  <Area dataKey="portfolio" fill="#1f8a70" fillOpacity={0.2} stroke="#1f8a70" name="Portfolio" />
-                  <Area dataKey="spy" fill="#587b7f" fillOpacity={0.18} stroke="#587b7f" name="SPY" />
-                </AreaChart>
-              </ResponsiveContainer>
+            <div className="w-full overflow-x-auto" style={{ height: 400 }}>
+              {(() => {
+                const seriesData = revealed
+                  ? (data?.backtest.series ?? []).filter(
+                      (p) => p.portfolio > 0 && p.spy > 0 && p.portfolio < 10000 && p.spy < 10000,
+                    )
+                  : [];
+                if (seriesData.length === 0) {
+                  return (
+                    <div className="flex h-full items-center justify-center text-sm text-ink/40">
+                      {revealed ? "No backtest data available." : "Click \"Reveal actual returns\" to see the path."}
+                    </div>
+                  );
+                }
+                return (
+                  <AreaChart width={700} height={380} data={seriesData}>
+                    <CartesianGrid stroke="#d8d7ce" strokeDasharray="3 3" />
+                    <XAxis dataKey="date" minTickGap={24} />
+                    <YAxis domain={["dataMin - 5", "dataMax + 5"]} />
+                    <Tooltip />
+                    <Area dataKey="portfolio" fill="#1f8a70" fillOpacity={0.2} stroke="#1f8a70" name="Portfolio" />
+                    <Area dataKey="spy" fill="#587b7f" fillOpacity={0.18} stroke="#587b7f" name="SPY" />
+                  </AreaChart>
+                );
+              })()}
             </div>
           </div>
         </section>

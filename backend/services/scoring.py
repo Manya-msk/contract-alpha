@@ -132,14 +132,16 @@ def score_companies(
         total = totals.get(ticker, 0)
         volume_bonus = 0.15 if total > 10_000_000_000 else (0.10 if total > 5_000_000_000 else 0.0)
         momentum_bonus = 0.10 if contract_growth > 0 else 0.0
-        # Rebalanced weights with pipeline as a 6th signal (25%):
-        # contract_growth 25%, hiring 15%, award_size 25%, sentiment 10%, pipeline 25%
+        # Pipeline signal is surfaced for transparency in the UI but intentionally
+        # excluded from the score: SAM.gov's free-tier quota can exhaust during a
+        # demo window, and we don't want fallback/cached values silently steering
+        # the model. Weights rebalanced to sum to 1.0 across the four live signals:
+        # contract_growth 35%, hiring 20%, award_size 30%, sentiment 15%
         score = (
-            (0.25 * max(relative_growth, -1.0))
-            + (0.15 * hiring_growth)
-            + (0.25 * award_size)
-            + (0.10 * sentiment_normalized)
-            + (0.25 * pipeline_signal)
+            (0.35 * max(relative_growth, -1.0))
+            + (0.20 * hiring_growth)
+            + (0.30 * award_size)
+            + (0.15 * sentiment_normalized)
             + volume_bonus
             + momentum_bonus
         )
