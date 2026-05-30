@@ -8,15 +8,16 @@ ContractAlpha is a government contract intelligence platform built for the **Web
 1. **Contract discovery** — pull contract awards from the seeded SQLite DB (or live USAspending via Bright Data). Map recipients to public tickers. Default: `use_live_contracts=true`.
 2. **Hiring signal** — real job posting data from `hiring_signals` DB table (collected via `collect_hiring_data.py`); falls back to synthetic if no DB record found.
 3. **Sentiment scoring** — AI/ML API (`gpt-4o-mini`) called with ticker + year, returns -1.0 to 1.0. Results cached in `serp_cache` table with key `sentiment_aiml:{ticker}:{year}`.
-4. **Scoring** — 5-signal weighted composite. Signals: BUY > 0.35, HOLD > 0.15, AVOID otherwise.
-5. **Evidence** — Bright Data SERP lookup for contract-related news. Returns up to 3 results per company, cached. Falls back to a placeholder if SERP is unavailable.
-6. **Thesis generation** — parallel AI/ML API calls (`gpt-4o-mini`) for 3 analyst-style bullet points per company. Format: `- [observation with number] — [implication for stock]`
-7. **Backtest** — buy top-3 BUY-rated tickers on cutoff date, hold through horizon, compare to SPY via yfinance.
+4. **Pipeline signal** — SAM.gov pre-award notices (presolicitations, sources sought, J&As) bulk-fetched and matched to companies. Surfaced in UI as pending notice count + top notice link. Cached in `serp_cache` as `sam_opps_bulk:{date}:{days}`. Falls back to hardcoded demo notices when `SAM_API_KEY` is missing or quota exhausted.
+5. **Scoring** — 4-signal weighted composite (pipeline surfaced but not scored to avoid demo-mode drift). Signals: BUY > 0.35, HOLD > 0.15, AVOID otherwise.
+6. **Evidence** — Bright Data SERP lookup for contract-related news. Returns up to 3 results per company, cached. Falls back to a placeholder if SERP is unavailable.
+7. **Thesis generation** — parallel AI/ML API calls (`gpt-4o-mini`) for 3 analyst-style bullet points per company. Format: `- [observation with number] — [implication for stock]`
+8. **Backtest** — buy top-3 BUY-rated tickers on cutoff date, hold through horizon, compare to SPY via yfinance.
 
 ### Frontend
 Next.js 14 + TypeScript + Tailwind + Recharts. Single-page app with:
 - Date + horizon controls → Run button
-- Scores table with: Ticker, Company, Signal badge, Score, Contracts %, Hiring %, Awards $, Sentiment badge, Trigger award, Thesis (bullet list), Evidence (links + snippets)
+- Scores table with: Ticker, Company, Signal badge, Score, Contracts %, Hiring %, Awards $, Sentiment badge, Pipeline (pending notices + link), Trigger award, Thesis (bullet list), Evidence (links + snippets)
 - Signal composition bar chart (contract/hiring/award breakdown per company)
 - Backtest reveal section — hides actual returns until user clicks "Reveal actual returns"
 - Cycling loading message + pulsing skeleton rows while backend is running
@@ -36,7 +37,7 @@ Next.js 14 + TypeScript + Tailwind + Recharts. Single-page app with:
 | `frontend/app/page.tsx` | Sentiment badge column, thesis bullet points column, 3 evidence links per company, cycling loading message, skeleton rows |
 
 ### Scoring weights (current)
-- **30%** contract growth (relative percentile — normalized vs peer median so seeded/declining data still produces signal)
+- **35%** contract growth (relative percentile — normalized vs peer median so seeded/declining data still produces signal)
 - **20%** hiring growth (real data from DB if available, else synthetic)
 - **30%** award size (log-normalized total $ awarded — most reliable signal with real USAspending data)
 - **15%** sentiment (LLM-estimated, cached)
@@ -49,32 +50,21 @@ Next.js 14 + TypeScript + Tailwind + Recharts. Single-page app with:
 
 | Issue | Severity |
 |---|---|
-| Alpha is negative (−21.5%) with 2023 cutoff — defense underperformed market that year | High — need to demo with 2022 cutoff |
-| Y-axis bug on performance chart showing `999998` — bad data point not filtered | High — looks terrible in demo |
-| Thesis empty for some companies — Groq rate limits on parallel calls | Medium |
-| Sentiment 0.0 for some companies — AI/ML API quota or timeout | Medium |
 | `use_live_contracts=true` takes 2–3 minutes — USAspending + Yahoo Finance calls are slow | Medium — no loading feedback during this wait |
-| Default cutoff should be 2022 where defense contractors outperformed SPY | Medium |
+| Sentiment 0.0 for some companies — AI/ML API quota or timeout | Medium |
+| SAM.gov free-tier quota can exhaust during demo — falls back to 35 hardcoded notices | Low — fallback covers all tracked tickers |
 
 ---
 
 ## Next steps in priority order
 
-1. **Fix y-axis chart bug** — filter bad data points before passing to `AreaChart`. In `frontend/app/page.tsx` line ~409:
-   ```typescript
-   const cleanSeries = (data?.backtest.series ?? []).filter(
-     p => p.portfolio > 0 && p.spy > 0 && p.portfolio < 10000 && p.spy < 10000
-   );
-   // use cleanSeries in <AreaChart data={revealed ? cleanSeries : []}>
-   ```
+1. **Add Triggerware webhook for BUY signals** — `POST /watch` endpoint takes ticker + webhook URL. When next `/simulate` run changes a ticker's signal from HOLD→BUY or AVOID→BUY, fire the webhook. Store watches in a `watches` SQLite table. Prize-stacking opportunity.
 
-2. **Test 2022 cutoff** — defense had a massive run in 2022 (Ukraine war, defense spending surge). Run with `cutoff_date: "2022-01-01"` — alpha should be strongly positive.
+2. **Persist thesis cache in SQLite** — `_thesis_cache` is currently in-process only (resets on backend restart). Add `thesis_cache` key format to `serp_cache` table so re-runs are instant.
 
-3. **Add Triggerware webhook for BUY signals** — `POST /watch` endpoint takes ticker + webhook URL. When next `/simulate` run changes a ticker's signal from HOLD→BUY or AVOID→BUY, fire the webhook. Store watches in a `watches` SQLite table. Prize-stacking opportunity.
+3. **Frontend polish** — loading skeleton during the 2–3 min live-data wait; row hover states; CSV download button.
 
-4. **Frontend polish** — loading skeleton for the 2–3 min live-data wait; row hover states; CSV download button.
-
-5. **Clean up debug artifacts** — remove `GET /debug-thesis` endpoint from `main.py`; remove stray `print` statements before submission.
+4. **Clean up stray `print` statements** before submission.
 
 ---
 
@@ -120,6 +110,7 @@ sqlite3 backend/contract_alpha.db "SELECT query, substr(response_json,1,60) FROM
 | `BRIGHTDATA_SERP_KEY` | Bright Data API key for SERP zone requests |
 | `BRIGHTDATA_SERP_ZONE` | Bright Data zone name (currently `serp_api1`) |
 | `AIML_API_KEY` | AI/ML API key — sentiment scoring via `gpt-4o-mini`. Hackathon prize-eligible. |
+| `SAM_API_KEY` | SAM.gov Opportunities API v2 key — pipeline signal (pre-award notices). Falls back to 35 hardcoded demo notices if missing or quota exhausted. |
 | `GROQ_API_KEY` | Not currently used — thesis switched to AI/ML API. Can be removed from `.env`. |
 | `GEMINI_API_KEY` | Not currently used. Reserved. |
 
@@ -174,9 +165,10 @@ backend/
     discovery.py       — USAspending API + Yahoo Finance ticker mapping; 3x horizon lookback
     evidence.py        — Bright Data SERP for contract evidence (returns list[dict], up to 3)
     jobs.py            — Hiring signal computation (synthetic fallback)
+    opportunities.py   — SAM.gov pre-award pipeline signal; bulk fetch up to 3000 notices; cached; 35-notice demo fallback
     scoring.py         — 5-signal composite; relative contract_growth ranking vs peer median
     sentiment.py       — AI/ML API sentiment (parallel, cached in serp_cache)
-    thesis.py          — AI/ML API gpt-4o-mini 3-bullet thesis generation (parallel, staggered)
+    thesis.py          — AI/ML API gpt-4o-mini 3-bullet thesis generation (parallel, in-process cache)
   scripts/
     __init__.py        — Empty package marker
     collect_hiring_data.py — One-time Bright Data SERP scraper → hiring_signals table

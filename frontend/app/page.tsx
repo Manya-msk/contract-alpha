@@ -71,7 +71,7 @@ type SignalResponse = {
   };
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+const API_BASE = "https://contract-alpha-production.up.railway.app";
 
 const currency = new Intl.NumberFormat("en-US", {
   style: "currency",

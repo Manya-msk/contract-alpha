@@ -3,7 +3,8 @@
     "frontend": {
       "root": "frontend",
       "routePrefix": "/",
-      "framework": "nextjs"
+      "framework": "nextjs",
+      "installCommand": "npm install --legacy-peer-deps"
     },
     "backend": {
       "root": "backend",
